@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-import { loadSettings } from './lib/settings'
+import { loadSettings, settings } from './lib/settings'
 import { loadLaneAliases, loadWaitingReasons, loadBasketTypes, loadDetailSources, loadLanes, loadRoles } from './lib/masterData'
 
 // โหลด master data (wh_settings, wh_lane_aliases, wh_waiting_reasons, wh_basket_types,
@@ -17,6 +17,7 @@ const settingsReady = Promise.race([
 ])
 
 settingsReady.finally(() => {
+  document.title = settings.siteName
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <App />

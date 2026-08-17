@@ -3228,6 +3228,7 @@ const SystemSettings = () => {
     geofenceLng:          settings.geofence.lng,
     geofenceRadiusM:      settings.geofence.radiusM,
     facilityName:            settings.facilityName,
+    siteName:                settings.siteName.replace(/\s*Loading\s*$/i, ""),
     unitPrice:               settings.unitPrice,
     vatRate:                 settings.vatRate,
     exitTimeWindowMinutes:   settings.exitTimeWindowMinutes,
@@ -3257,6 +3258,8 @@ const SystemSettings = () => {
       return "รัศมี geofence ต้องมากกว่า 0";
     if (!form.facilityName.trim())
       return "กรุณากรอกชื่อโรงงาน";
+    if (!form.siteName.trim())
+      return "กรุณากรอกชื่อเว็บ (คำหน้า)";
     if (!Number.isFinite(n(form.unitPrice)) || n(form.unitPrice) < 0)
       return "ราคาต่อหน่วยต้องไม่ติดลบ";
     if (!Number.isFinite(n(form.vatRate)) || n(form.vatRate) < 0)
@@ -3279,11 +3282,13 @@ const SystemSettings = () => {
         saveSetting("max_waiting_reasons",    Number(form.maxWaitingReasons)),
         saveSetting("geofence", { lat: Number(form.geofenceLat), lng: Number(form.geofenceLng), radiusM: Number(form.geofenceRadiusM) }),
         saveSetting("facility_name",            form.facilityName),
+        saveSetting("site_name",                `${form.siteName.trim()} Loading`),
         saveSetting("unit_price",               Number(form.unitPrice)),
         saveSetting("vat_rate",                 Number(form.vatRate)),
         saveSetting("exit_time_window_minutes", Number(form.exitTimeWindowMinutes)),
         saveSetting("excluded_customer_groups", form.excludedCustomerGroups.split(",").map(s => s.trim()).filter(Boolean)),
       ]);
+      document.title = `${form.siteName.trim()} Loading`;
       setMsg("✅ บันทึกการตั้งค่าสำเร็จ — มีผลทันทีในเซสชันนี้ เครื่องอื่นต้องรีเฟรชหน้าถึงจะเห็นค่าใหม่");
     } catch (e) {
       alert("บันทึกไม่สำเร็จ: " + e.message);
@@ -3331,10 +3336,17 @@ const SystemSettings = () => {
         </div>
       </div>
       <div style={{ fontWeight: 700, fontSize: 12, color: "#6b7280", margin: "10px 0 6px" }}>🏭 ข้อมูลโรงงาน / เอกสาร</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div>
           <label style={lbl}>ชื่อโรงงาน (แสดงบนหัวจอและใบพิมพ์)</label>
           <input value={form.facilityName} onChange={set("facilityName")} style={inp} placeholder="เช่น โรงงานพระพุทธบาท" />
+        </div>
+        <div>
+          <label style={lbl}>ชื่อเว็บ (แสดงบนแท็บ browser)</label>
+          <div style={{ display: "flex" }}>
+            <input value={form.siteName} onChange={set("siteName")} style={{ ...inp, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: "none" }} placeholder="เช่น KK" />
+            <span style={{ ...inp, flex: "none", width: "auto", background: "#f3f4f6", color: "#6b7280", borderTopLeftRadius: 0, borderBottomLeftRadius: 0, display: "flex", alignItems: "center", whiteSpace: "nowrap" }}>Loading</span>
+          </div>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
