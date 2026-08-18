@@ -4826,6 +4826,14 @@ const WT_GROUPS = [
 ];
 const WT_GROUP_MAP = Object.fromEntries(WT_GROUPS.map(g => [g.id, g]));
 const WT_CELL_BG  = { info: "#f8fafc", entry: "#eff6ff", parts: "#fff7ed", head: "#f5f3ff", pork: "#fff1f2", docs: "#f0fdfa", exit: "#f8fafc" };
+const WT_LANE_KEY = { parts: "lane_parts", head: "lane_head", pork: "lane_pork" };
+const WT_EMPTY_LANE_BG = "#eef0f2";
+// ลานที่ทะเบียนรถนั้นไม่มีการโหลดสินค้าเลย (ไม่มีทั้ง ตรวจอุณหภูมิ/QC/โหลดเสร็จ) — ใช้ทำให้ 3 คอลัมน์ของลานนั้นเป็นสีเทาอ่อน
+const wtLaneIsEmpty = (t, grp) => {
+  const lk = WT_LANE_KEY[grp];
+  if (!lk) return false;
+  return !(t.qcLanes?.[lk]?.doneAt || t.sampleLanes?.[lk]?.doneAt || t.loadLanes?.[lk]?.doneAt);
+};
 
 // ─── STAT TILE (Tracking summary cards) ──────────────────────────────────────
 // de-emphasis bars in a light tint of the tile's own accent hue, current (last) bar in full accent
@@ -5229,7 +5237,8 @@ const WorkTracking = ({ trucks, queue }) => {
                     onMouseEnter={e => e.currentTarget.style.filter = "brightness(0.96)"}
                     onMouseLeave={e => e.currentTarget.style.filter = ""}>
                     {COLS.map(col => {
-                      const cellBg = i % 2 === 0 ? WT_CELL_BG[col.grp] : "#fff";
+                      const laneEmpty = WT_LANE_KEY[col.grp] && wtLaneIsEmpty(t, col.grp);
+                      const cellBg = laneEmpty ? WT_EMPTY_LANE_BG : (i % 2 === 0 ? WT_CELL_BG[col.grp] : "#fff");
                       const val = col.get(t);
 
                       if (col.id === "plate") return (
@@ -5250,7 +5259,7 @@ const WorkTracking = ({ trucks, queue }) => {
                         return (
                           <td key={col.id} style={{ padding: "7px 10px", background: cellBg, borderRight: "1px solid #e5e7eb", textAlign: "center", whiteSpace: "nowrap" }}>
                             {val
-                              ? <span style={{ fontWeight: 700, color: "#2563eb", fontSize: 13 }}>{val}</span>
+                              ? <span style={{ fontWeight: 700, color: "#2563eb", fontSize: 13 }}>{formatLogTime(val, date)}</span>
                               : <span style={{ color: "#d1d5db" }}>—</span>}
                           </td>
                         );
@@ -5301,7 +5310,7 @@ const WorkTracking = ({ trucks, queue }) => {
                       return (
                         <td key={col.id} style={{ padding: "7px 10px", background: cellBg, borderRight: "1px solid #e5e7eb", textAlign: "center", whiteSpace: "nowrap" }}>
                           {val
-                            ? <span style={{ fontWeight: 700, color: g.mid, fontSize: 13 }}>{val}</span>
+                            ? <span style={{ fontWeight: 700, color: g.mid, fontSize: 13 }}>{formatLogTime(val, date)}</span>
                             : <span style={{ color: "#e5e7eb" }}>—</span>}
                         </td>
                       );

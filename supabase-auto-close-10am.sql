@@ -14,11 +14,14 @@
 --    Dashboard → Database → Extensions → ค้นหา "pg_cron" → Enable
 create extension if not exists pg_cron;
 
--- 2) ฟังก์ชันปิดงาน — คำนวณ archive_date จากเวลา Bangkok ตรง ๆ
---    (งานนี้ตั้งให้รันตอน 10:00 Bangkok พอดี จึงไม่ต้องมี logic ก่อน/หลังเที่ยงแบบ cycleDateStr)
+-- 2) ฟังก์ชันปิดงาน — คำนวณ archive_date จากเวลา Bangkok
+--    งานนี้รันตอน 10:00 Bangkok พอดี ซึ่งเป็นจังหวะที่ cycleDateStr() (ฝั่งแอป) เพิ่งข้าม
+--    ไปนับเป็น "วันนี้" (รอบใหม่) แล้ว — รอบงานที่เพิ่งปิดจริง ๆ คือ "เมื่อวาน" (รอบที่เริ่ม
+--    เมื่อวาน 10:00 แล้วมาจบเช้านี้ 09:59:59) จึงต้อง -1 วันเทียบกับวันที่ ณ ตอนรัน
+--    ไม่งั้นจะไปทับ/ปนกับ archive ของรอบที่เพิ่งเริ่มนับตั้งแต่ 10:00:00 ของวันนี้เอง
 create or replace function close_work_day() returns void as $$
 declare
-  v_archive_date date := (now() at time zone 'Asia/Bangkok')::date;
+  v_archive_date date := (now() at time zone 'Asia/Bangkok')::date - 1;
   v_queue        jsonb;
   v_trucks       jsonb;
 begin
