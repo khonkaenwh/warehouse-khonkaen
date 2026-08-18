@@ -148,3 +148,45 @@ create table if not exists wh_detail_sources (
 alter table wh_detail_sources enable row level security;
 drop policy if exists "allow all" on wh_detail_sources;
 create policy "allow all" on wh_detail_sources for all using (true) with check (true);
+
+-- ─── wh_lanes ───────────────────────────────────────────────
+-- ป้ายชื่อ/สี/emoji ของลานโหลด เสริม/override 3 ลาน default ในโค้ด (lane_parts/lane_head/lane_pork)
+-- id ต้องคงที่เสมอเพราะผูกกับ qcLanes/loadLanes/sampleLanes และ kiosk URL ที่มี QR พิมพ์ใช้งานอยู่แล้ว
+-- data = { label, shortLabel, tinyLabel, emoji, color, bg, border, sortOrder }
+create table if not exists wh_lanes (
+  id   text primary key,
+  data jsonb
+);
+
+alter table wh_lanes enable row level security;
+drop policy if exists "allow all" on wh_lanes;
+create policy "allow all" on wh_lanes for all using (true) with check (true);
+
+-- ─── wh_roles ───────────────────────────────────────────────
+-- ป้ายชื่อ/emoji/รูปของตำแหน่งงาน เสริม/override 10 ตำแหน่ง default ในโค้ด
+-- id ต้องเป็นหนึ่งใน 10 ตำแหน่งที่โค้ดรู้จักอยู่แล้ว (qc, checker, loading, office_wh,
+-- office_plan, lg, dashboard_only, loading_data, tracking, all) — แก้ได้แค่หน้าตา
+-- data = { label, emoji, img }
+create table if not exists wh_roles (
+  id   text primary key,
+  data jsonb
+);
+
+alter table wh_roles enable row level security;
+drop policy if exists "allow all" on wh_roles;
+create policy "allow all" on wh_roles for all using (true) with check (true);
+
+-- ─── wh_qc_bays ─────────────────────────────────────────────
+-- ช่องโหลดที่เลือกก่อนเข้าฟอร์ม QC/QC สุ่ม/Checker กำหนดจำนวนช่องแยกต่อลานได้
+-- (default ในโค้ด: ชิ้นส่วน 7 / หัวเครื่องใน 2 / หมูซีก 4 ช่อง) — เพิ่ม/ลบ/แก้ชื่อได้อิสระ
+-- id = รหัสช่องโหลด (auto), lane_id = ลานที่ช่องนี้อยู่ (lane_parts/lane_head/lane_pork)
+-- data = { label, sortOrder } หรือ { deleted: true } ถ้าเป็นช่อง default ที่ถูกลบ
+create table if not exists wh_qc_bays (
+  id      text primary key,
+  lane_id text,
+  data    jsonb
+);
+
+alter table wh_qc_bays enable row level security;
+drop policy if exists "allow all" on wh_qc_bays;
+create policy "allow all" on wh_qc_bays for all using (true) with check (true);
