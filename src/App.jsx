@@ -31,7 +31,10 @@ import {
   detailSources, saveDetailSource, deleteDetailSource, defaultDetailCols,
   lanes, saveLane,
   roles, saveRole,
+  qcBays, addQcBay, saveQcBay, deleteQcBay,
 } from "./lib/masterData";
+
+const qcBayLabel = id => qcBays.find(b => b.id === id)?.label || id;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FLOW:
@@ -1787,20 +1790,49 @@ const Picking = ({ trucks, queue, onUpdate, detailMapByChannel = {} }) => {
   );
 };
 
+// เลือกช่องโหลด (master ใน wh_qc_bays) ก่อนเข้าฟอร์ม QC/QC สุ่ม/Checker ทุกครั้งที่เข้าเว็บ
+// (ไม่จำค่าไว้ข้ามการโหลดหน้า — ไม่กรองข้อมูลรถ แค่เป็น label ที่แนบไปกับบันทึกแต่ละครั้ง)
+const BaySelectScreen = ({ title, color, laneId, onChoose, onBack }) => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 10, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px 20px" }}>
+    <div style={{ maxWidth: 420, width: "100%" }}>
+      <h2 style={{ textAlign: "center", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>{title}</h2>
+      <p style={{ textAlign: "center", color: "#6b7280", fontSize: 12, margin: "0 0 28px" }}>เลือกช่องโหลด</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {qcBays.filter(b => b.laneId === laneId).map(b => (
+          <button key={b.id} onClick={() => onChoose(b.id)}
+            style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 0, padding: "16px 14px", fontSize: 15, fontWeight: 700, cursor: "pointer", color }}>
+            ช่องโหลด {b.label}
+          </button>
+        ))}
+      </div>
+      {onBack && (
+        <button onClick={onBack} style={{ marginTop: 24, width: "100%", background: "transparent", border: "none", color: "#6b7280", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "center" }}>
+          ← กลับหน้าเลือกลานโหลด
+        </button>
+      )}
+    </div>
+  </div>
+);
+
 // ── 4. QC (per-lane) ──────────────────────────────────────────────────────────
-const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
+const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {}, onBack }) => {
   const [selId,     setSelId]     = useState("");
   const lane = laneId;
   const [temp,      setTemp]      = useState("");
   const [photo,     setPhoto]     = useState(null);
   const [flashLane, setFlashLane] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [bay,       setBay]       = useState("");
 
   // รับทุกรถที่สถานะ "picking" (พิมพ์เบิกแล้ว)
   const eligible = trucks.filter(t => ["arrived", "picking"].includes(t.status) && !settings.excludedCustomerGroups.includes(t.customerGroup));
   const sel      = trucks.find(t => t.id === selId) || null;
   const actLane  = lanes.find(l => l.id === lane);
   const thisLaneQCd = sel?.qcLanes?.[lane]?.done;
+
+  if (settings.qcBayEnabled && !bay) {
+    return <BaySelectScreen title={`ลานโหลด → ${actLane.label}`} color={actLane.color} laneId={lane} onChoose={setBay} onBack={onBack} />;
+  }
 
   const handlePhoto = e => {
     const files = Array.from(e.target.files).slice(0, settings.maxPhotoUploads); if (!files.length) return;
@@ -1817,7 +1849,7 @@ const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
     setUploading(true);
     try {
       const photoUrls = await uploadPhotos(`qc`, sel.plate, Array.isArray(photo) ? photo : (photo ? [photo] : []));
-      const qcLanes = { ...(sel.qcLanes || {}), [lane]: { done: true, temp, photos: photoUrls, doneAt: TIME_NOW() } };
+      const qcLanes = { ...(sel.qcLanes || {}), [lane]: { done: true, temp, photos: photoUrls, doneAt: TIME_NOW(), ...(settings.qcBayEnabled ? { bay } : {}) } };
       await onUpdate(sel.id, { qcLanes });
       setFlashLane(lane); setTemp(""); setPhoto(null);
       setTimeout(() => setFlashLane(null), 2500);
@@ -1832,7 +1864,15 @@ const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22 }}>ลานโหลด → {actLane.label}</h2>
+      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        ลานโหลด → {actLane.label}
+        {settings.qcBayEnabled && <>
+          {` · ช่องโหลด ${qcBayLabel(bay)}`}
+          <button onClick={() => setBay("")} style={{ background: "transparent", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+            เปลี่ยนช่องโหลด
+          </button>
+        </>}
+      </h2>
 
       {flashLane && (
         <div style={{ padding: "13px 16px", background: "#d1fae5", borderRadius: 0, color: "#065f46", fontWeight: 700, marginBottom: 14, display: "flex", gap: 8, alignItems: "center" }}>
@@ -1884,7 +1924,7 @@ const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
       <div style={{ background: actLane.bg, border: `2px solid ${actLane.border}`, borderRadius: 0, padding: 18, marginBottom: 12 }}>
         {thisLaneQCd && (
           <div style={{ padding: "9px 12px", background: "#d1fae5", borderRadius: 0, color: "#065f46", fontWeight: 700, marginBottom: 12, fontSize: 13 }}>
-            ✅ {actLane.label} QC แล้ว: {sel.qcLanes[lane].temp}°C — สามารถวัดซ้ำได้
+            ✅ {actLane.label} QC แล้ว: {sel.qcLanes[lane].temp}°C{sel.qcLanes[lane].bay ? ` · ช่องโหลด ${qcBayLabel(sel.qcLanes[lane].bay)}` : ""} — สามารถวัดซ้ำได้
           </div>
         )}
         <div style={{ marginBottom: 14 }}>
@@ -1907,19 +1947,24 @@ const QC = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
 };
 
 // ── 4b. RANDOM SAMPLE CHECK (per-lane, photo only, no temp) ───────────────────
-const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }) => {
+const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {}, onBack }) => {
   const [selId,     setSelId]     = useState("");
   const lane = laneId;
   const [photo,     setPhoto]     = useState(null);
   const [note,      setNote]      = useState("");
   const [flashLane, setFlashLane] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [bay,       setBay]       = useState("");
 
   const eligible = trucks.filter(t => ["arrived", "picking"].includes(t.status) && !settings.excludedCustomerGroups.includes(t.customerGroup));
   const sel      = trucks.find(t => t.id === selId) || null;
   const actLane  = lanes.find(l => l.id === lane);
   const photos   = Array.isArray(photo) ? photo : (photo ? [photo] : []);
   const thisLaneChecked = sel?.sampleLanes?.[lane]?.done;
+
+  if (settings.qcBayEnabled && !bay) {
+    return <BaySelectScreen title={`ตรวจอุณหภูมิ → ${actLane.label}`} color={actLane.color} laneId={lane} onChoose={setBay} onBack={onBack} />;
+  }
 
   const handlePhoto = e => {
     const files = Array.from(e.target.files).slice(0, settings.maxPhotoUploads); if (!files.length) return;
@@ -1936,7 +1981,7 @@ const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }
     setUploading(true);
     try {
       const photoUrls = await uploadPhotos(`sample`, sel.plate, photos);
-      const sampleLanes = { ...(sel.sampleLanes || {}), [lane]: { done: true, photos: photoUrls, note, doneAt: TIME_NOW() } };
+      const sampleLanes = { ...(sel.sampleLanes || {}), [lane]: { done: true, photos: photoUrls, note, doneAt: TIME_NOW(), ...(settings.qcBayEnabled ? { bay } : {}) } };
       await onUpdate(sel.id, { sampleLanes });
       setFlashLane(lane); setPhoto(null); setNote("");
       setTimeout(() => setFlashLane(null), 2500);
@@ -1949,7 +1994,15 @@ const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22 }}>ตรวจอุณหภูมิ → {actLane.label}</h2>
+      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        ตรวจอุณหภูมิ → {actLane.label}
+        {settings.qcBayEnabled && <>
+          {` · ช่องโหลด ${qcBayLabel(bay)}`}
+          <button onClick={() => setBay("")} style={{ background: "transparent", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+            เปลี่ยนช่องโหลด
+          </button>
+        </>}
+      </h2>
 
       {flashLane && (
         <div style={{ padding: "13px 16px", background: "#d1fae5", borderRadius: 0, color: "#065f46", fontWeight: 700, marginBottom: 14, display: "flex", gap: 8, alignItems: "center" }}>
@@ -2001,7 +2054,7 @@ const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }
       <div style={{ background: actLane.bg, border: `2px solid ${actLane.border}`, borderRadius: 0, padding: 18, marginBottom: 12 }}>
         {thisLaneChecked && (
           <div style={{ padding: "9px 12px", background: "#d1fae5", borderRadius: 0, color: "#065f46", fontWeight: 700, marginBottom: 12, fontSize: 13 }}>
-            ✅ {actLane.label} ตรวจแล้ว — สามารถตรวจซ้ำได้
+            ✅ {actLane.label} ตรวจแล้ว{sel.sampleLanes[lane].bay ? ` · ช่องโหลด ${qcBayLabel(sel.sampleLanes[lane].bay)}` : ""} — สามารถตรวจซ้ำได้
           </div>
         )}
         <div style={{ marginBottom: 14 }}>
@@ -2028,8 +2081,9 @@ const RandomSampleCheck = ({ trucks, onUpdate, laneId, detailMapByChannel = {} }
 };
 
 // ── 5. LOADING YARD (per-lane gate) ───────────────────────────────────────────
-const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [] }) => {
+const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [], onBack }) => {
   const [activeLane, setActiveLane] = useState(laneId ?? "lane_parts");
+  const [bay, setBay] = useState("");
   const emptyBaskets = () => ({ ...Object.fromEntries(basketTypes.map(b => [b.key, ""])), payer: "" });
   const [forms, setForms] = useState({
     lane_parts: { selId: "", photo: null, note: "", flash: false, uploading: false, baskets: emptyBaskets() },
@@ -2048,6 +2102,10 @@ const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [] }) => {
   const setReasonAt = (idx, val) => setWaitingReasons(rs => rs.map((r, i) => i === idx ? val : r));
   const addReasonField = () => setWaitingReasons(rs => rs.length >= MAX_WAITING_REASONS ? rs : [...rs, ""]);
   const removeReasonField = (idx) => setWaitingReasons(rs => rs.length <= 1 ? rs : rs.filter((_, i) => i !== idx));
+
+  if (settings.qcBayEnabled && !bay) {
+    return <BaySelectScreen title={`Checker ${curLane.label}`} color={curLane.color} laneId={activeLane} onChoose={setBay} onBack={onBack} />;
+  }
 
   // ตัวเลือก dropdown ของ popup "รอสินค้าอะไร" — ชื่อสินค้าจาก Master ลานโหลด กรองเฉพาะลานที่เปิดอยู่
   const waitingOptions = (() => {
@@ -2094,7 +2152,7 @@ const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [] }) => {
     setWaitingModal(false);
     setF(activeLane, { uploading: true });
     try {
-      const loadLanes = { ...(sel.loadLanes || {}), [activeLane]: { ...(sel.loadLanes?.[activeLane] || {}), waiting: true, waitingAt: TIME_NOW(), waitingFor: combinedReason, note: form.note } };
+      const loadLanes = { ...(sel.loadLanes || {}), [activeLane]: { ...(sel.loadLanes?.[activeLane] || {}), waiting: true, waitingAt: TIME_NOW(), waitingFor: combinedReason, note: form.note, ...(settings.qcBayEnabled ? { bay } : {}) } };
       await onUpdate(sel.id, { loadLanes });
       setF(activeLane, { selId: "", photo: null, note: "", uploading: false, baskets: emptyBaskets() });
     } catch (e) {
@@ -2113,7 +2171,7 @@ const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [] }) => {
       const existing = sel.loadLanes?.[activeLane] || {};
       const baskets = Object.fromEntries(basketTypes.map(b => [b.key, Number(form.baskets?.[b.key]) || 0]));
       const basketPayer = (form.baskets?.payer || "").trim();
-      const loadLanes = { ...(sel.loadLanes || {}), [activeLane]: { ...existing, done: true, photos: photoUrls, note: form.note, doneAt: TIME_NOW(), baskets, basketPayer } };
+      const loadLanes = { ...(sel.loadLanes || {}), [activeLane]: { ...existing, done: true, photos: photoUrls, note: form.note, doneAt: TIME_NOW(), baskets, basketPayer, ...(settings.qcBayEnabled ? { bay } : {}) } };
       await onUpdate(sel.id, { loadLanes });
       setF(activeLane, { selId: "", photo: null, note: "", flash: true, uploading: false, baskets: emptyBaskets() });
       setTimeout(() => setF(activeLane, { flash: false }), 2500);
@@ -2147,7 +2205,15 @@ const LoadingYard = ({ trucks, onUpdate, laneId, masterLane = [] }) => {
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22 }}>Checker {curLane.label}</h2>
+      <h2 style={{ margin: "0 0 18px", fontWeight: 900, fontSize: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        Checker {curLane.label}
+        {settings.qcBayEnabled && <>
+          {` · ช่องโหลด ${qcBayLabel(bay)}`}
+          <button onClick={() => setBay("")} style={{ background: "transparent", border: "none", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+            เปลี่ยนช่องโหลด
+          </button>
+        </>}
+      </h2>
 
       {/* ฟอร์มลาน */}
       <div style={{ background: curLane.bg, border: `2px solid ${curLane.border}`, borderRadius: 0, padding: 20, marginBottom: 16 }}>
@@ -2332,7 +2398,10 @@ const buildLaneEvents = (list, sources) => {
             doneAt: ld.doneAt,
             photos: ld.photos || [],
             doneLabel: src.doneLabel,
-            note: src.field === "qcLanes" ? (ld.temp != null ? `${ld.temp}°C` : "") : ld.note,
+            note: [
+              src.field === "qcLanes" ? (ld.temp != null ? `${ld.temp}°C` : "") : (ld.note || ""),
+              ld.bay ? `ช่องโหลด ${qcBayLabel(ld.bay)}` : "",
+            ].filter(Boolean).join(" · "),
           });
         }
       }
@@ -3590,6 +3659,116 @@ const BasketTypeSettings = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// QC BAYS (wh_qc_bays) — ช่องโหลดที่เลือกก่อนเข้าฟอร์ม QC ในแต่ละลาน กำหนดจำนวน
+// ช่องแยกต่อลานได้ (เช่น ชิ้นส่วน 7 ช่อง, หัว/เครื่องใน 2 ช่อง, หมูซีก 4 ช่อง)
+// ─────────────────────────────────────────────────────────────────────────────
+const QcBaySettings = () => {
+  const [rows, setRows] = useState(() => [...qcBays]);
+  const [newLabel, setNewLabel] = useState({});
+  const [busy, setBusy] = useState(null);
+  const [enabled, setEnabled] = useState(settings.qcBayEnabled);
+  const [savingEnabled, setSavingEnabled] = useState(false);
+
+  const refresh = () => setRows([...qcBays]);
+
+  const toggleEnabled = async (checked) => {
+    setEnabled(checked);
+    setSavingEnabled(true);
+    try {
+      await saveSetting("qc_bay_enabled", checked);
+    } catch (e) {
+      alert("บันทึกไม่สำเร็จ: " + e.message);
+      setEnabled(!checked);
+    } finally {
+      setSavingEnabled(false);
+    }
+  };
+
+  const add = async (laneId) => {
+    setBusy(laneId);
+    try {
+      await addQcBay(laneId, newLabel[laneId] || "");
+      setNewLabel(nl => ({ ...nl, [laneId]: "" }));
+      refresh();
+    } catch (e) {
+      alert("บันทึกไม่สำเร็จ: " + e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const editLabel = (id, label) => setRows(rs => rs.map(r => r.id === id ? { ...r, label } : r));
+
+  const rename = async (b) => {
+    const original = qcBays.find(x => x.id === b.id)?.label;
+    if (b.label === original) return;
+    try {
+      await saveQcBay(b.id, b.label);
+      refresh();
+    } catch (e) {
+      alert("บันทึกไม่สำเร็จ: " + e.message);
+      refresh();
+    }
+  };
+
+  const remove = async (b) => {
+    if (!window.confirm(`ลบช่องโหลด "${b.label}"? ถ้าเคยมีรถบันทึกข้อมูลด้วยช่องนี้ไว้แล้ว ข้อมูลจะยังอยู่ในฐานข้อมูลแต่จะไม่แสดง/เลือกซ้ำในหน้าเว็บอีก`)) return;
+    try {
+      await deleteQcBay(b.id);
+      refresh();
+    } catch (e) {
+      alert("ลบไม่สำเร็จ: " + e.message);
+    }
+  };
+
+  const inp = { border: "1.5px solid #d1d5db", borderRadius: 0, padding: "8px 10px", fontSize: 13, fontWeight: 600, boxSizing: "border-box", outline: "none" };
+
+  return (
+    <Collapsible title="🚪 ช่องโหลด">
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, cursor: savingEnabled ? "default" : "pointer" }}>
+        <input type="checkbox" checked={enabled} disabled={savingEnabled} onChange={e => toggleEnabled(e.target.checked)}
+          style={{ position: "absolute", opacity: 0, width: 0, height: 0 }} />
+        <span aria-hidden="true" style={{ position: "relative", width: 42, height: 24, borderRadius: 999, flexShrink: 0, background: enabled ? "#16a34a" : "#d1d5db", transition: "background 0.15s", opacity: savingEnabled ? 0.6 : 1 }}>
+          <span style={{ position: "absolute", top: 2, left: enabled ? 20 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
+        </span>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>เปิดใช้งานการเลือกช่องโหลด</span>
+      </label>
+      <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 16 }}>
+        แต่ละลานกำหนดจำนวนช่องโหลดแยกกันได้ — เพิ่ม/ลบ/แก้ชื่อได้อิสระ แต่ต้องเหลืออย่างน้อย 1 ช่องต่อ 1 ลานเสมอ
+        {!enabled && " — ปิดอยู่ตอนนี้ หน้า QC/QC สุ่ม/Checker จะไม่ถามช่องโหลดเลย"}
+      </div>
+      {lanes.map(l => {
+        const laneBays = rows.filter(b => b.laneId === l.id).sort((a, b) => a.sortOrder - b.sortOrder);
+        return (
+          <div key={l.id} style={{ marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid #f3f4f6" }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: l.color, marginBottom: 8 }}>{l.tinyLabel} <span style={{ color: "#9ca3af", fontWeight: 600 }}>({laneBays.length} ช่องโหลด)</span></div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {laneBays.map(b => (
+                <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#f9fafb", border: "1.5px solid #e5e7eb" }}>
+                  <span style={{ fontSize: 12, color: "#6b7280", paddingLeft: 8 }}>ช่องโหลด</span>
+                  <input value={b.label} onChange={e => editLabel(b.id, e.target.value)} onBlur={() => rename(b)}
+                    style={{ ...inp, width: 46, border: "none", background: "transparent", textAlign: "center" }} />
+                  <button onClick={() => remove(b)} disabled={laneBays.length <= 1}
+                    style={{ background: "none", border: "none", color: laneBays.length <= 1 ? "#d1d5db" : "#dc2626", cursor: laneBays.length <= 1 ? "default" : "pointer", fontSize: 13, padding: "6px 8px" }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={newLabel[l.id] || ""} onChange={e => setNewLabel(nl => ({ ...nl, [l.id]: e.target.value }))}
+                style={{ ...inp, flex: 1 }} placeholder={`เช่น ${laneBays.length + 1}`} />
+              <button onClick={() => add(l.id)} disabled={busy === l.id}
+                style={{ background: busy === l.id ? "#e5e7eb" : "#111", color: busy === l.id ? "#9ca3af" : "#fff", border: "none", borderRadius: 0, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: busy === l.id ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                + เพิ่มช่อง
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </Collapsible>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DETAIL SOURCES (wh_detail_sources) — ช่องทาง PO + คอลัมน์ Excel ต่อช่องทาง
 // ─────────────────────────────────────────────────────────────────────────────
 const DetailSourceSettings = () => {
@@ -4624,6 +4803,7 @@ const MasterUpload = ({ masterLane, onMasterChange }) => {
       <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
         <SystemSettings />
         <LaneSettings />
+        <QcBaySettings />
         <RoleSettings />
         <LaneAliasSettings />
         <WaitingReasonSettings />
@@ -5659,15 +5839,15 @@ export default function App() {
         {tab === "lg"        && <LGUpload queue={queue} onSetQueue={handleSetQueue} />}
         {tab === "driver"    && <DriverScan queue={queue} trucks={trucks} onScan={handleScan} skipGeofence />}
         {tab === "picking"   && <Picking trucks={trucks} queue={queue} onUpdate={handleUpdate} detailMapByChannel={detailMapByChannel} />}
-        {tab === "qc_parts"  && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} />}
-        {tab === "qc_head"   && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} />}
-        {tab === "qc_pork"   && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} />}
-        {tab === "loading_parts" && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" masterLane={masterLane} />}
-        {tab === "loading_head"  && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" masterLane={masterLane} />}
-        {tab === "loading_pork"  && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" masterLane={masterLane} />}
-        {tab === "sample_parts"  && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} />}
-        {tab === "sample_head"   && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} />}
-        {tab === "sample_pork"   && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} />}
+        {tab === "qc_parts"  && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
+        {tab === "qc_head"   && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
+        {tab === "qc_pork"   && <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
+        {tab === "loading_parts" && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" masterLane={masterLane} onBack={() => setTab("")} />}
+        {tab === "loading_head"  && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" masterLane={masterLane} onBack={() => setTab("")} />}
+        {tab === "loading_pork"  && <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" masterLane={masterLane} onBack={() => setTab("")} />}
+        {tab === "sample_parts"  && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
+        {tab === "sample_head"   && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
+        {tab === "sample_pork"   && <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} onBack={() => setTab("")} />}
         {tab === "overview_log"  && <OverviewLog trucks={trucks} />}
         {tab === "work_tracking" && <WorkTracking trucks={trucks} queue={queue} detailMapByChannel={detailMapByChannel} masterLane={masterLane} />}
         {tab === "planning"      && <Planning trucks={trucks} queue={queue} onUpdate={handleUpdate} />}

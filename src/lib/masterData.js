@@ -255,6 +255,88 @@ export async function deleteLane(id) {
   if (idx >= 0) lanes.splice(idx, 1)
 }
 
+// ── QC bays (wh_qc_bays) ─────────────────────────────────────────────────────
+// ช่องโหลดที่ให้เลือกก่อนเข้าฟอร์ม QC/QC สุ่ม/Checker — จำนวนช่องกำหนดแยกต่อลานได้
+// (ชิ้นส่วน/หัวเครื่องใน/หมูซีก มีจำนวนช่องไม่เท่ากัน) เป็นแค่ label/ข้อมูลอ้างอิงที่
+// บันทึกไปกับผลตรวจแต่ละครั้งเท่านั้น ไม่ผูกกับ routing ใดๆ จึงเพิ่ม/ลบ/แก้ชื่อได้อิสระ
+// ทุกช่อง รวมถึงช่อง default — เหลือได้ต่ำสุดลานละ 1 ช่อง (กันหน้าจอเลือกช่องโหลด
+// ไม่มีตัวเลือกให้กดเลย)
+const laneBaySeq = (laneId, count) =>
+  Array.from({ length: count }, (_, i) => ({ id: `${laneId}_default_${i + 1}`, laneId, label: String(i + 1), sortOrder: i + 1 }))
+const DEFAULT_QC_BAYS = [
+  ...laneBaySeq("lane_parts", 7),
+  ...laneBaySeq("lane_head", 2),
+  ...laneBaySeq("lane_pork", 4),
+]
+export const qcBays = [...DEFAULT_QC_BAYS]
+
+export async function loadQcBays() {
+  try {
+    const { data, error } = await supabase.from("wh_qc_bays").select("id, lane_id, data")
+    if (error) throw error
+    const merged = [...DEFAULT_QC_BAYS]
+    for (const row of data || []) {
+      // data.deleted = true คือ tombstone ของช่อง default ที่ถูกลบไป (ลบแถวทิ้งเฉยๆ ไม่พอ
+      // เพราะ merge รอบถัดไปจะเอา DEFAULT_QC_BAYS กลับมาเสมอ ต้องมาร์คไว้แทนการลบจริง)
+      if (row.data?.deleted) {
+        const idx = merged.findIndex(b => b.id === row.id)
+        if (idx >= 0) merged.splice(idx, 1)
+        continue
+      }
+      const entry = { id: row.id, laneId: row.lane_id, label: row.data?.label || row.id, sortOrder: row.data?.sortOrder ?? 0 }
+      const idx = merged.findIndex(b => b.id === entry.id)
+      if (idx >= 0) merged[idx] = entry; else merged.push(entry)
+    }
+    merged.sort((a, b) => a.sortOrder - b.sortOrder)
+    qcBays.length = 0
+    qcBays.push(...merged)
+  } catch (e) {
+    console.error("โหลด wh_qc_bays ไม่สำเร็จ ใช้ default ในโค้ดไปก่อน:", e)
+  }
+}
+
+// เพิ่มช่องโหลดใหม่ให้ลานที่ระบุ — id สุ่มจาก timestamp เพราะไม่ได้ผูกกับตัวเลขที่ผู้ใช้พิมพ์
+export async function addQcBay(laneId, label) {
+  const trimmed = (label || "").trim()
+  if (!trimmed) throw new Error("กรุณากรอกชื่อช่องโหลด")
+  const sameLine = qcBays.filter(b => b.laneId === laneId)
+  const sortOrder = sameLine.length ? Math.max(...sameLine.map(b => b.sortOrder)) + 1 : 1
+  const id = `bay_${Date.now()}`
+  const { error } = await supabase.from("wh_qc_bays").insert({ id, lane_id: laneId, data: { label: trimmed, sortOrder } })
+  if (error) throw error
+  qcBays.push({ id, laneId, label: trimmed, sortOrder })
+}
+
+// แก้ชื่อช่องโหลดที่มีอยู่แล้ว
+export async function saveQcBay(id, label) {
+  const idx = qcBays.findIndex(b => b.id === id)
+  if (idx < 0) throw new Error("ไม่พบช่องโหลดนี้")
+  const trimmed = (label || "").trim()
+  if (!trimmed) throw new Error("กรุณากรอกชื่อช่องโหลด")
+  const { error } = await supabase.from("wh_qc_bays").upsert({ id, lane_id: qcBays[idx].laneId, data: { label: trimmed, sortOrder: qcBays[idx].sortOrder } })
+  if (error) throw error
+  qcBays[idx] = { ...qcBays[idx], label: trimmed }
+}
+
+// ลบได้ทุกช่อง (รวมช่อง default) แต่ต้องเหลืออย่างน้อย 1 ช่องต่อ 1 ลานเสมอ — ถ้าเคยมีรถ
+// บันทึกข้อมูลด้วยช่องนี้ไว้แล้ว ข้อมูลนั้นจะยังอยู่ในฐานข้อมูลแต่จะไม่แสดง/เลือกซ้ำในหน้าเว็บอีก
+export async function deleteQcBay(id) {
+  const bay = qcBays.find(b => b.id === id)
+  if (!bay) return
+  const sameLine = qcBays.filter(b => b.laneId === bay.laneId)
+  if (sameLine.length <= 1) throw new Error("ต้องมีช่องโหลดอย่างน้อย 1 ช่องต่อ 1 ลานเสมอ")
+  if (DEFAULT_QC_BAYS.some(b => b.id === id)) {
+    // ช่อง default ในโค้ด — ลบแถวทิ้งเฉยๆ ไม่พอ (โหลดใหม่จะ merge กลับมาเสมอ) ต้องมาร์ค tombstone แทน
+    const { error } = await supabase.from("wh_qc_bays").upsert({ id, lane_id: bay.laneId, data: { deleted: true } })
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from("wh_qc_bays").delete().eq("id", id)
+    if (error) throw error
+  }
+  const idx = qcBays.findIndex(b => b.id === id)
+  if (idx >= 0) qcBays.splice(idx, 1)
+}
+
 // ── Roles (wh_roles) ─────────────────────────────────────────────────────────
 // ป้ายชื่อ/emoji/รูปของตำแหน่งงานในหน้าเลือกตำแหน่งงาน — id ต้องคงที่เสมอเพราะ
 // ROLE_TABS/LANE_SELECT_ROLES ใน App.jsx ผูก logic ว่า role ไหนเห็นเมนูอะไรกับ id
