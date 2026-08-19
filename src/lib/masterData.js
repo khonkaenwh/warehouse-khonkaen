@@ -255,86 +255,88 @@ export async function deleteLane(id) {
   if (idx >= 0) lanes.splice(idx, 1)
 }
 
-// ── QC bays (wh_qc_bays) ─────────────────────────────────────────────────────
-// ช่องโหลดที่ให้เลือกก่อนเข้าฟอร์ม QC/QC สุ่ม/Checker — จำนวนช่องกำหนดแยกต่อลานได้
-// (ชิ้นส่วน/หัวเครื่องใน/หมูซีก มีจำนวนช่องไม่เท่ากัน) เป็นแค่ label/ข้อมูลอ้างอิงที่
-// บันทึกไปกับผลตรวจแต่ละครั้งเท่านั้น ไม่ผูกกับ routing ใดๆ จึงเพิ่ม/ลบ/แก้ชื่อได้อิสระ
-// ทุกช่อง รวมถึงช่อง default — เหลือได้ต่ำสุดลานละ 1 ช่อง (กันหน้าจอเลือกช่องโหลด
-// ไม่มีตัวเลือกให้กดเลย)
-const laneBaySeq = (laneId, count) =>
-  Array.from({ length: count }, (_, i) => ({ id: `${laneId}_default_${i + 1}`, laneId, label: String(i + 1), sortOrder: i + 1 }))
-const DEFAULT_QC_BAYS = [
-  ...laneBaySeq("lane_parts", 7),
-  ...laneBaySeq("lane_head", 2),
-  ...laneBaySeq("lane_pork", 4),
+// ── Bays (wh_bays) ───────────────────────────────────────────────────────────
+// ช่องโหลดย่อยภายในแต่ละลาน (ชิ้นส่วน 7 ช่อง / หัวเครื่องใน 2 ช่อง / หมูซีก 4 ช่อง เป็น
+// default) — เปิด/ปิดการบังคับเลือกช่องโหลดทั้งระบบได้ที่ settings.enableBaySelection
+// (wh_settings, key enable_bay_selection) ปิดแล้วหน้า QC/QC สุ่ม/Checker จะข้ามหน้าเลือก
+// ช่องไปเข้าฟอร์มเลย ไม่บันทึก bayId ลง DB
+// id คงที่ตลอดอายุระบบเพราะผูกกับ qcLanes/sampleLanes/loadLanes[...].bayId ที่บันทึกไว้
+// แล้ว — เพิ่ม/ลบ/แก้ชื่อได้อิสระต่อลาน แต่ deleteBay กันไว้ไม่ให้ลบช่องสุดท้ายของลานนั้น
+const DEFAULT_BAYS = [
+  ...Array.from({ length: 7 }, (_, i) => ({ id: `lane_parts_bay_${i + 1}`, laneId: "lane_parts", label: `ช่องโหลด ${i + 1}`, sortOrder: i + 1 })),
+  ...Array.from({ length: 2 }, (_, i) => ({ id: `lane_head_bay_${i + 1}`,  laneId: "lane_head",  label: `ช่องโหลด ${i + 1}`, sortOrder: i + 1 })),
+  ...Array.from({ length: 4 }, (_, i) => ({ id: `lane_pork_bay_${i + 1}`,  laneId: "lane_pork",  label: `ช่องโหลด ${i + 1}`, sortOrder: i + 1 })),
 ]
-export const qcBays = [...DEFAULT_QC_BAYS]
+export const bays = [...DEFAULT_BAYS]
 
-export async function loadQcBays() {
+export async function loadBays() {
   try {
-    const { data, error } = await supabase.from("wh_qc_bays").select("id, lane_id, data")
+    const { data, error } = await supabase.from("wh_bays").select("id, data")
     if (error) throw error
-    const merged = [...DEFAULT_QC_BAYS]
+    // แถวที่ data.deleted=true คือ tombstone ของ default bay ที่ถูกลบ (ดู deleteBay) —
+    // ต้อง apply ก่อน merge เพราะ default ตัวนั้นจะไม่มีแถวจริงให้ .delete() ลบได้เลย
+    const deletedDefaults = new Set((data || []).filter(r => r.data?.deleted).map(r => r.id))
+    const merged = DEFAULT_BAYS.filter(b => !deletedDefaults.has(b.id))
     for (const row of data || []) {
-      // data.deleted = true คือ tombstone ของช่อง default ที่ถูกลบไป (ลบแถวทิ้งเฉยๆ ไม่พอ
-      // เพราะ merge รอบถัดไปจะเอา DEFAULT_QC_BAYS กลับมาเสมอ ต้องมาร์คไว้แทนการลบจริง)
-      if (row.data?.deleted) {
-        const idx = merged.findIndex(b => b.id === row.id)
-        if (idx >= 0) merged.splice(idx, 1)
-        continue
+      if (row.data?.deleted) continue
+      const d = row.data || {}
+      const base = merged.find(b => b.id === row.id)
+      const laneId = d.laneId || base?.laneId
+      if (!laneId) continue // ไม่รู้จะผูกกับลานไหน ข้ามแถวนี้
+      const entry = {
+        id: row.id,
+        laneId,
+        label: d.label || base?.label || row.id,
+        sortOrder: Number.isFinite(d.sortOrder) ? d.sortOrder : (base?.sortOrder ?? 0),
       }
-      const entry = { id: row.id, laneId: row.lane_id, label: row.data?.label || row.id, sortOrder: row.data?.sortOrder ?? 0 }
       const idx = merged.findIndex(b => b.id === entry.id)
       if (idx >= 0) merged[idx] = entry; else merged.push(entry)
     }
-    merged.sort((a, b) => a.sortOrder - b.sortOrder)
-    qcBays.length = 0
-    qcBays.push(...merged)
+    bays.length = 0
+    bays.push(...merged)
   } catch (e) {
-    console.error("โหลด wh_qc_bays ไม่สำเร็จ ใช้ default ในโค้ดไปก่อน:", e)
+    console.error("โหลด wh_bays ไม่สำเร็จ ใช้ default ในโค้ดไปก่อน:", e)
   }
 }
 
-// เพิ่มช่องโหลดใหม่ให้ลานที่ระบุ — id สุ่มจาก timestamp เพราะไม่ได้ผูกกับตัวเลขที่ผู้ใช้พิมพ์
-export async function addQcBay(laneId, label) {
+export async function addBay(laneId, label) {
   const trimmed = (label || "").trim()
   if (!trimmed) throw new Error("กรุณากรอกชื่อช่องโหลด")
-  const sameLine = qcBays.filter(b => b.laneId === laneId)
-  const sortOrder = sameLine.length ? Math.max(...sameLine.map(b => b.sortOrder)) + 1 : 1
-  const id = `bay_${Date.now()}`
-  const { error } = await supabase.from("wh_qc_bays").insert({ id, lane_id: laneId, data: { label: trimmed, sortOrder } })
+  const id = `${laneId}_bay_${Date.now()}`
+  const sortOrder = Date.now()
+  const { error } = await supabase.from("wh_bays").insert({ id, data: { laneId, label: trimmed, sortOrder } })
   if (error) throw error
-  qcBays.push({ id, laneId, label: trimmed, sortOrder })
+  bays.push({ id, laneId, label: trimmed, sortOrder })
 }
 
-// แก้ชื่อช่องโหลดที่มีอยู่แล้ว
-export async function saveQcBay(id, label) {
-  const idx = qcBays.findIndex(b => b.id === id)
-  if (idx < 0) throw new Error("ไม่พบช่องโหลดนี้")
+export async function saveBay(id, label) {
   const trimmed = (label || "").trim()
   if (!trimmed) throw new Error("กรุณากรอกชื่อช่องโหลด")
-  const { error } = await supabase.from("wh_qc_bays").upsert({ id, lane_id: qcBays[idx].laneId, data: { label: trimmed, sortOrder: qcBays[idx].sortOrder } })
+  const row = bays.find(b => b.id === id)
+  if (!row) throw new Error("ไม่พบช่องโหลดนี้")
+  const { error } = await supabase.from("wh_bays").upsert({ id, data: { laneId: row.laneId, label: trimmed, sortOrder: row.sortOrder } })
   if (error) throw error
-  qcBays[idx] = { ...qcBays[idx], label: trimmed }
+  row.label = trimmed
 }
 
-// ลบได้ทุกช่อง (รวมช่อง default) แต่ต้องเหลืออย่างน้อย 1 ช่องต่อ 1 ลานเสมอ — ถ้าเคยมีรถ
-// บันทึกข้อมูลด้วยช่องนี้ไว้แล้ว ข้อมูลนั้นจะยังอยู่ในฐานข้อมูลแต่จะไม่แสดง/เลือกซ้ำในหน้าเว็บอีก
-export async function deleteQcBay(id) {
-  const bay = qcBays.find(b => b.id === id)
-  if (!bay) return
-  const sameLine = qcBays.filter(b => b.laneId === bay.laneId)
-  if (sameLine.length <= 1) throw new Error("ต้องมีช่องโหลดอย่างน้อย 1 ช่องต่อ 1 ลานเสมอ")
-  if (DEFAULT_QC_BAYS.some(b => b.id === id)) {
-    // ช่อง default ในโค้ด — ลบแถวทิ้งเฉยๆ ไม่พอ (โหลดใหม่จะ merge กลับมาเสมอ) ต้องมาร์ค tombstone แทน
-    const { error } = await supabase.from("wh_qc_bays").upsert({ id, lane_id: bay.laneId, data: { deleted: true } })
+// ต้องเหลืออย่างน้อย 1 ช่องต่อลานเสมอ กันหน้าเลือกช่องโหลดของลานนั้นว่างเปล่า
+export async function deleteBay(id) {
+  const row = bays.find(b => b.id === id)
+  if (!row) return
+  const remaining = bays.filter(b => b.laneId === row.laneId && b.id !== id)
+  if (remaining.length === 0) throw new Error("ต้องเหลืออย่างน้อย 1 ช่องโหลดต่อลาน")
+  if (DEFAULT_BAYS.some(b => b.id === id)) {
+    // default bay ไม่มีแถวจริงใน wh_bays เสมอไป (ถ้าไม่เคยแก้ชื่อ) — .delete() ธรรมดาจะไม่ error
+    // แต่ก็ไม่ลบอะไรจริง แล้ว DEFAULT_BAYS จะทำให้ช่องนี้โผล่กลับมาใหม่ทุกครั้งที่ loadBays()
+    // ต้องฝัง tombstone แทนเพื่อให้ loadBays() รู้ว่าต้องข้าม default id นี้ไปตลอด
+    const { error } = await supabase.from("wh_bays").upsert({ id, data: { deleted: true, laneId: row.laneId } })
     if (error) throw error
   } else {
-    const { error } = await supabase.from("wh_qc_bays").delete().eq("id", id)
+    const { error } = await supabase.from("wh_bays").delete().eq("id", id)
     if (error) throw error
   }
-  const idx = qcBays.findIndex(b => b.id === id)
-  if (idx >= 0) qcBays.splice(idx, 1)
+  const idx = bays.findIndex(b => b.id === id)
+  if (idx >= 0) bays.splice(idx, 1)
 }
 
 // ── Roles (wh_roles) ─────────────────────────────────────────────────────────

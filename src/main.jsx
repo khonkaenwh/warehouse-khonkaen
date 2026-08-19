@@ -2,22 +2,21 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-import { loadSettings, settings } from './lib/settings'
-import { loadLaneAliases, loadWaitingReasons, loadBasketTypes, loadDetailSources, loadLanes, loadRoles, loadQcBays } from './lib/masterData'
+import { loadSettings } from './lib/settings'
+import { loadLaneAliases, loadWaitingReasons, loadBasketTypes, loadDetailSources, loadLanes, loadRoles, loadBays } from './lib/masterData'
 
 // โหลด master data (wh_settings, wh_lane_aliases, wh_waiting_reasons, wh_basket_types,
-// wh_detail_sources, wh_lanes, wh_roles, wh_qc_bays) ให้เสร็จก่อน mount แอป — ฟังก์ชัน top-level ใน
-// App.jsx (DATE_STR, cycleDateStr, normalizeLaneKey, normalizeChannels, ฯลฯ) อ่านค่าจาก
-// object เหล่านี้ตรงๆ ตอน render/เรียกใช้ครั้งแรก ถ้า mount ไปก่อนจะเห็นค่า default ค้างอยู่
-// จนกว่าจะมี re-render ครั้งถัดไป
+// wh_detail_sources, wh_lanes, wh_roles, wh_bays) ให้เสร็จก่อน mount แอป — ฟังก์ชัน
+// top-level ใน App.jsx (DATE_STR, cycleDateStr, normalizeLaneKey, normalizeChannels, ฯลฯ)
+// อ่านค่าจาก object เหล่านี้ตรงๆ ตอน render/เรียกใช้ครั้งแรก ถ้า mount ไปก่อนจะเห็นค่า default
+// ค้างอยู่จนกว่าจะมี re-render ครั้งถัดไป
 // กันแอปค้างไม่ mount ถ้า Supabase ตอบช้า/ไม่ตอบ — ปล่อยผ่านไปใช้ค่า default แทน
 const settingsReady = Promise.race([
-  Promise.all([loadSettings(), loadLaneAliases(), loadWaitingReasons(), loadBasketTypes(), loadDetailSources(), loadLanes(), loadRoles(), loadQcBays()]),
+  Promise.all([loadSettings(), loadLaneAliases(), loadWaitingReasons(), loadBasketTypes(), loadDetailSources(), loadLanes(), loadRoles(), loadBays()]),
   new Promise(resolve => setTimeout(resolve, 5000)),
 ])
 
 settingsReady.finally(() => {
-  document.title = settings.siteName
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <App />

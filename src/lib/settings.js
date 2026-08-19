@@ -11,21 +11,14 @@ export const settings = {
   maxWaitingReasons:    3,
   geofence:             { lat: 14.7260, lng: 100.7950, radiusM: 2000 },
   facilityName:            "โรงงานพระพุทธบาท",
-  siteName:                "KK Loading",
+  siteTitle:               "KB",
   unitPrice:               120,
   vatRate:                 0.07,
   exitTimeWindowMinutes:   240,
   excludedCustomerGroups:  ["CPFTH"],
-  qcBayEnabled:            true,
-  lgColumnAliases: {
-    date:          ["วันที่","date"],
-    plate:         ["ทะเบียนรถ","ทะเบียน","plate"],
-    customerGroup: ["กลุ่มลูกค้า","customergroup"],
-    zone:          ["zone","โซน","ลาน"],
-    entryTime:     ["เวลารถเข้าโรงงาน","เวลาเข้าโรงงาน","เข้าโรงงาน","entrytime"],
-    exitTime:      ["เวลาออกจากโรงงาน","ออกจากโรงงาน","exittime"],
-  },
+  enableBaySelection:      true,
   masterFileFallbackCols:  { productCode: 1, lane: 4 },
+  masterSettingPin:        "0000",
 }
 
 const SETTERS = {
@@ -35,14 +28,14 @@ const SETTERS = {
   max_waiting_reasons:   v => { const n = Number(v); if (Number.isFinite(n) && n > 0) settings.maxWaitingReasons = n; },
   geofence:              v => { if (v && typeof v === "object") settings.geofence = { ...settings.geofence, ...v }; },
   facility_name:            v => { if (typeof v === "string" && v.trim()) settings.facilityName = v; },
-  site_name:                v => { if (typeof v === "string" && v.trim()) settings.siteName = v; },
+  site_title:               v => { if (typeof v === "string" && v.trim()) { settings.siteTitle = v; document.title = `${v.trim()} Loading`; } },
   unit_price:               v => { const n = Number(v); if (Number.isFinite(n) && n >= 0) settings.unitPrice = n; },
   vat_rate:                 v => { const n = Number(v); if (Number.isFinite(n) && n >= 0) settings.vatRate = n; },
   exit_time_window_minutes: v => { const n = Number(v); if (Number.isFinite(n) && n > 0) settings.exitTimeWindowMinutes = n; },
   excluded_customer_groups: v => { if (Array.isArray(v)) settings.excludedCustomerGroups = v.filter(x => typeof x === "string"); },
-  qc_bay_enabled:           v => { settings.qcBayEnabled = !!v; },
-  lg_column_aliases:        v => { if (v && typeof v === "object") settings.lgColumnAliases = { ...settings.lgColumnAliases, ...v }; },
+  enable_bay_selection:     v => { settings.enableBaySelection = !!v; },
   master_file_fallback_cols: v => { if (v && typeof v === "object") settings.masterFileFallbackCols = { ...settings.masterFileFallbackCols, ...v }; },
+  master_setting_pin:       v => { if (typeof v === "string" && /^\d{4}$/.test(v)) settings.masterSettingPin = v; },
 }
 
 export async function loadSettings() {
