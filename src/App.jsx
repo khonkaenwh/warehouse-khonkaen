@@ -179,6 +179,7 @@ const QRCodeDisplay = ({ url, size = 220 }) => (
 );
 
 const QR_ITEMS = [
+  { mode: "",              emoji: "🏠", label: "หน้ารวมการทำงาน",  color: "#4f46e5", bg: "#eef2ff" },
   { mode: "driver",        emoji: "🚛", label: "คนขับ เช็คอิน",     color: "#111",    bg: "#f9fafb" },
   { mode: "dashboard_transport", emoji: "📊", label: "Dashboard ขนส่ง", color: "#0ea5e9", bg: "#f0f9ff" },
   { mode: "qc_parts",      emoji: "🌡️", label: "ลานโหลด ชิ้นส่วน",      color: "#0369a1", bg: "#f0f9ff" },
@@ -229,11 +230,11 @@ const saveQrImage = async (url, mode) => {
 const QRCodePage = () => {
   const base = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "";
   const [zoomItem, setZoomItem] = useState(null);
-  const topRowItems = QR_ITEMS.filter(i => i.mode === "driver" || i.mode === "dashboard_transport");
-  const restItems    = QR_ITEMS.filter(i => i.mode !== "driver" && i.mode !== "dashboard_transport");
+  const topRowItems = QR_ITEMS.filter(i => i.mode === "" || i.mode === "driver" || i.mode === "dashboard_transport");
+  const restItems    = QR_ITEMS.filter(i => i.mode !== "" && i.mode !== "driver" && i.mode !== "dashboard_transport");
 
   const renderCard = ({ mode, emoji, label, color, bg }) => {
-    const url = `${base}?mode=${mode}`;
+    const url = mode ? `${base}?mode=${mode}` : base;
     return (
       <div key={mode} onClick={() => setZoomItem({ mode, emoji, label, color, bg })}
         style={{ background: "#fff", borderRadius: 0, padding: 8, boxShadow: "0 2px 12px rgba(0,0,0,0.08)", border: `2px solid ${color}20`, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, cursor: "pointer" }}>
@@ -278,7 +279,7 @@ const QRCodePage = () => {
       </div>
 
       {zoomItem && (() => {
-        const url = `${base}?mode=${zoomItem.mode}`;
+        const url = zoomItem.mode ? `${base}?mode=${zoomItem.mode}` : base;
         return (
           <div onClick={() => setZoomItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 0, padding: 28, maxWidth: 360, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: "default" }}>
@@ -299,7 +300,7 @@ const QRCodePage = () => {
                   ↗ เปิด
                 </a>
               </div>
-              <button onClick={() => saveQrImage(url, zoomItem.mode)}
+              <button onClick={() => saveQrImage(url, zoomItem.mode || "home")}
                 style={{ width: "100%", background: "#16a34a", color: "#fff", border: "none", borderRadius: 0, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 💾 บันทึกรูป QR
               </button>
