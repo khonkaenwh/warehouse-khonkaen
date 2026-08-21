@@ -179,7 +179,7 @@ const QRCodeDisplay = ({ url, size = 220 }) => (
 );
 
 const QR_ITEMS = [
-  { mode: "",              emoji: "🏠", label: "หน้ารวมการทำงาน",  color: "#4f46e5", bg: "#eef2ff" },
+  { mode: "",              emoji: "🏠", label: "หน้ารวมการทำงาน",  color: "#16a34a", bg: "#f0fdf4" },
   { mode: "driver",        emoji: "🚛", label: "คนขับ เช็คอิน",     color: "#111",    bg: "#f9fafb" },
   { mode: "dashboard_transport", emoji: "📊", label: "Dashboard ขนส่ง", color: "#0ea5e9", bg: "#f0f9ff" },
   { mode: "qc_parts",      emoji: "🌡️", label: "ลานโหลด ชิ้นส่วน",      color: "#0369a1", bg: "#f0f9ff" },
