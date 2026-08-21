@@ -29,7 +29,7 @@ import {
   waitingReasons as waitingReasonPresets, addWaitingReason, deleteWaitingReason,
   basketTypes, saveBasketType, deleteBasketType,
   detailSources, saveDetailSource, deleteDetailSource, defaultDetailCols,
-  lanes, saveLane,
+  lanes, saveLane, isLaneActive,
   roles, saveRole,
   bays, addBay, saveBay, deleteBay,
 } from "./lib/masterData";
@@ -618,6 +618,19 @@ const exportArchiveExcel = async (dateStr) => {
 };
 
 const LANE_LABEL = { lane_parts: "ลานชิ้นส่วน", lane_head: "ลานหัว/เครื่องใน", lane_pork: "ลานหมูซีก" };
+
+// เมนู/แท็บที่ผูกกับลานโหลดแต่ละลาน — ใช้ซ่อนเมนูเมื่อปิดใช้งานลานนั้น
+const TAB_LANE = {
+  qc_parts: "lane_parts", qc_head: "lane_head", qc_pork: "lane_pork",
+  loading_parts: "lane_parts", loading_head: "lane_head", loading_pork: "lane_pork",
+  sample_parts: "lane_parts", sample_head: "lane_head", sample_pork: "lane_pork",
+};
+
+const LaneDisabledNotice = () => (
+  <div style={{ textAlign: "center", padding: "80px 20px", color: "#9ca3af", fontWeight: 700, fontSize: 15 }}>
+    ⛔ ลานนี้ปิดใช้งานอยู่ในขณะนี้ — ติดต่อผู้ดูแลระบบ
+  </div>
+);
 
 const TruckTable = ({ visibleRows, allRows, searchPlate, setSearchPlate, getRemMins, myPlate, simple = false }) => {
   const containerRef = useRef(null);
@@ -3831,10 +3844,25 @@ const LaneSettings = () => {
   const save = async (row) => {
     setBusy(row.id);
     try {
-      await saveLane(row.id, { label: row.label, shortLabel: row.shortLabel, tinyLabel: row.tinyLabel, emoji: row.emoji, color: row.color, bg: row.bg, border: row.border, sortOrder: row.sortOrder });
+      await saveLane(row.id, { label: row.label, shortLabel: row.shortLabel, tinyLabel: row.tinyLabel, emoji: row.emoji, color: row.color, bg: row.bg, border: row.border, sortOrder: row.sortOrder, active: row.active !== false });
       refresh();
     } catch (e) {
       alert("บันทึกไม่สำเร็จ: " + e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleActive = async (row) => {
+    const nextActive = row.active === false;
+    setRows(rs => rs.map(r => r.id === row.id ? { ...r, active: nextActive } : r));
+    setBusy(row.id);
+    try {
+      await saveLane(row.id, { label: row.label, shortLabel: row.shortLabel, tinyLabel: row.tinyLabel, emoji: row.emoji, color: row.color, bg: row.bg, border: row.border, sortOrder: row.sortOrder, active: nextActive });
+      refresh();
+    } catch (e) {
+      alert("บันทึกไม่สำเร็จ: " + e.message);
+      setRows(rs => rs.map(r => r.id === row.id ? { ...r, active: row.active } : r));
     } finally {
       setBusy(null);
     }
@@ -3846,10 +3874,12 @@ const LaneSettings = () => {
   return (
     <Collapsible title="🏭 ลานโหลด (Lanes)">
       <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 12 }}>
-        แก้ป้ายชื่อ/สี/emoji ของ 3 ลานได้ที่นี่ — รหัสลาน (id) เปลี่ยนไม่ได้เพราะผูกกับ QR/URL ที่พิมพ์ใช้งานอยู่แล้ว การเพิ่ม/ลดจำนวนลานต้องแก้โค้ดส่วน routing เพิ่มเติม
+        แก้ป้ายชื่อ/สี/emoji ของ 3 ลานได้ที่นี่ — รหัสลาน (id) เปลี่ยนไม่ได้เพราะผูกกับ QR/URL ที่พิมพ์ใช้งานอยู่แล้ว การเพิ่ม/ลดจำนวนลานต้องแก้โค้ดส่วน routing เพิ่มเติม ปิดใช้งานลานเพื่อซ่อนเมนูงานของลานนั้น (QC/Checker/QC สุ่ม) และแท็บ Dashboard ชั่วคราว โดยไม่ลบข้อมูลเดิม
       </div>
-      {rows.map(r => (
-        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr 1fr 56px auto", gap: 8, alignItems: "end", padding: "10px 0", borderBottom: "1px solid #f3f4f6" }}>
+      {rows.map(r => {
+        const active = r.active !== false;
+        return (
+        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr 1fr 56px 90px auto", gap: 8, alignItems: "end", padding: "10px 0", borderBottom: "1px solid #f3f4f6", opacity: active ? 1 : 0.55 }}>
           <div>
             <label style={lbl}>id</label>
             <div style={{ fontSize: 12, color: "#9ca3af", padding: "9px 0" }}>{r.id}</div>
@@ -3870,12 +3900,19 @@ const LaneSettings = () => {
             <label style={lbl}>สี</label>
             <input type="color" value={r.color} onChange={editField(r.id, "color")} style={{ ...inp, padding: 2, height: 38 }} />
           </div>
+          <div>
+            <label style={lbl}>ใช้งาน</label>
+            <div style={{ padding: "7px 0" }}>
+              <Switch checked={active} onChange={() => toggleActive(r)} disabled={busy === r.id} />
+            </div>
+          </div>
           <button onClick={() => save(r)} disabled={busy === r.id}
             style={{ background: busy === r.id ? "#e5e7eb" : "#111", color: busy === r.id ? "#9ca3af" : "#fff", border: "none", borderRadius: 0, padding: "9px 14px", fontWeight: 700, fontSize: 13, cursor: busy === r.id ? "default" : "pointer", whiteSpace: "nowrap" }}>
             💾 บันทึก
           </button>
         </div>
-      ))}
+        );
+      })}
     </Collapsible>
   );
 };
@@ -5825,7 +5862,7 @@ export default function App() {
     { id: "admin",          label: "Admin",          icon: "plan"      },
     { id: "master_upload", label: "Master Setting", icon: "clipboard" },
     { id: "qr",             label: "QR Code",       icon: "scan"      },
-  ];
+  ].filter(t => !TAB_LANE[t.id] || isLaneActive(TAB_LANE[t.id]));
 
   // ── Kiosk header helper ──
   const KioskHeader = ({ emoji, title, color = "#111" }) => (
@@ -5883,7 +5920,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🌡️" title="ลานโหลด ชิ้นส่วน" color="#0369a1" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_parts") ? <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5894,7 +5931,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🌡️" title="ลานโหลด หัว/เครื่องใน" color="#0369a1" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_head") ? <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5905,7 +5942,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🌡️" title="ลานโหลด หมูซีก" color="#0369a1" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_pork") ? <QC trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5917,7 +5954,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🥩" title="Checker ลานโหลดชิ้นส่วน" color="#c2410c" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" masterLane={masterLane} />
+          {isLaneActive("lane_parts") ? <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" masterLane={masterLane} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5928,7 +5965,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🐷" title="Checker ลานโหลดหัว/เครื่องใน" color="#7c3aed" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" masterLane={masterLane} />
+          {isLaneActive("lane_head") ? <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" masterLane={masterLane} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5939,7 +5976,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="🐖" title="Checker ลานโหลดหมูซีก" color="#be123c" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" masterLane={masterLane} />
+          {isLaneActive("lane_pork") ? <LoadingYard trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" masterLane={masterLane} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5951,7 +5988,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="📷" title="QC ชิ้นส่วน" color="#0d9488" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_parts") ? <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_parts" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5962,7 +5999,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="📷" title="QC หัว/เครื่องใน" color="#0d9488" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_head") ? <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_head" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -5973,7 +6010,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Sarabun','Noto Sans Thai',sans-serif" }}>
         <KioskHeader emoji="📷" title="QC หมูซีก" color="#0d9488" />
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 14px 60px" }}>
-          <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} />
+          {isLaneActive("lane_pork") ? <RandomSampleCheck trucks={trucks} onUpdate={handleUpdate} laneId="lane_pork" detailMapByChannel={detailMapByChannel} /> : <LaneDisabledNotice />}
         </div>
       </div>
     );
@@ -6006,7 +6043,7 @@ export default function App() {
                 { id: "lane_parts", label: "ชิ้นส่วน"       },
                 { id: "lane_head",  label: "หัว/เครื่องใน"  },
                 { id: "lane_pork",  label: "หมูซีก"         },
-              ].map(l => {
+              ].filter(l => l.id === "main" || isLaneActive(l.id)).map(l => {
                 const active = dashLane === l.id;
                 return (
                   <button key={l.id} onClick={() => setDashLane(l.id)}
