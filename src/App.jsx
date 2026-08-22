@@ -1147,24 +1147,35 @@ const LGUpload = ({ queue, onSetQueue }) => {
     reader.readAsArrayBuffer(file);
   };
 
+  const plateNum = s => (String(s).match(/\d+/g) || []).pop() || "";
+
   const handleConfirm = async () => {
-    const newQueue = extracted.map((t, i) => ({
-      id:            `Q${Date.now()}-${i}`,
-      seq:           i,
-      date:          t.date          || "",
-      plate:         t.plate        || "",
-      driver:        "",
-      customerGroup: t.customerGroup || "",
-      zone:          t.zone          || "",
-      product:       t.customerGroup || "",
-      destination:   t.zone          || "",
-      qty:           0,
-      unit:          "กก.",
-      time:          t.entryTime    || "",
-      entryTime:     t.entryTime    || "",
-      loadTime:      t.loadTime     || "",
-      exitTime:      t.exitTime     || "",
-    }));
+    const oldIdsByKey = {};
+    for (const q of queue) {
+      const key = `${q.date}|${plateNum(q.plate)}`;
+      (oldIdsByKey[key] ||= []).push(q.id);
+    }
+    const newQueue = extracted.map((t, i) => {
+      const key = `${t.date}|${plateNum(t.plate)}`;
+      const reusedId = (oldIdsByKey[key] || []).shift();
+      return {
+        id:            reusedId || `Q${Date.now()}-${i}`,
+        seq:           i,
+        date:          t.date          || "",
+        plate:         t.plate        || "",
+        driver:        "",
+        customerGroup: t.customerGroup || "",
+        zone:          t.zone          || "",
+        product:       t.customerGroup || "",
+        destination:   t.zone          || "",
+        qty:           0,
+        unit:          "กก.",
+        time:          t.entryTime    || "",
+        entryTime:     t.entryTime    || "",
+        loadTime:      t.loadTime     || "",
+        exitTime:      t.exitTime     || "",
+      };
+    });
     setStatus("uploading");
     setErrMsg("");
     try {
